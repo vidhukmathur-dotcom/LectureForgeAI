@@ -95,6 +95,7 @@ if uploaded_file is not None:
         ai_engine.api_key = api_key_input
 
     if st.button("🚀 Process Presentation Deck", type="primary"):
+        # --- FIXED: Variable name now matches api_key_input perfectly ---
         if not api_key_input:
             st.error("⚠️ Please supply a valid Groq API key in the sidebar configuration to execute.")
         else:
