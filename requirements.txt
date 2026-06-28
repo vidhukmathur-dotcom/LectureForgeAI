@@ -1,5 +1,3 @@
-pygame>=2.6.1
-gTTS>=2.5.1
 moviepy>=2.0.0
 proglog>=0.1.10
 google-generativeai>=0.8.0
