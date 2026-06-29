@@ -27,13 +27,14 @@ class VideoGenerator:
         
         return slide_clip
 
-    def compile_lecture_video(self, slide_images: list, audio_tracks: list, output_path: str):
+    def compile_lecture_video(self, slide_images: list, audio_tracks: list, output_path: str, image_dir: str = None, **kwargs):
         """
         Stitches multiple slides and audio tracks into a final lecture video.
         
         :param slide_images: List of file paths to slide images.
         :param audio_tracks: List of file paths to corresponding audio narrations.
         :param output_path: Destination path for the rendered MP4 file.
+        :param image_dir: Optional directory path where slide images are located (accepted for compatibility).
         """
         if len(slide_images) != len(audio_tracks):
             raise ValueError("The number of slide images must match the number of audio tracks.")
