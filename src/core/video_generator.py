@@ -107,12 +107,28 @@ class VideoGenerator:
         # - threads tells libx264 to use multiple CPU cores during encoding
         #   instead of a single core. Streamlit Cloud's free tier typically
         #   gives 2-4 cores; adjust this number to match your actual container.
+        #
+        # Reliability note:
+        # - MoviePy writes the audio track to a temporary file first, then
+        #   runs a second ffmpeg pass to merge that temp audio with the
+        #   silent video into the final output. If that temp file's path
+        #   isn't pinned explicitly, MoviePy computes it as a bare filename
+        #   (no directory), which gets resolved relative to whatever the
+        #   process's current working directory happens to be at write time.
+        #   If that differs between the audio-write step and the merge step
+        #   (or the file gets cleaned up in between), you get errors like
+        #   "Broken pipe" / "No such file or directory" referencing the
+        #   *TEMP_MPY_wvf_snd.mp4 file. Explicitly setting temp_audiofile_path
+        #   removes that ambiguity by forcing both steps to agree on the
+        #   exact same directory.
+        output_dir = os.path.dirname(os.path.abspath(output_path)) or "."
         final_video.write_videofile(
             output_path,
             fps=15,
             codec="libx264",
             audio_codec="aac",
             threads=4,
+            temp_audiofile_path=output_dir,
         )
 
         # Close clips to release system resources
