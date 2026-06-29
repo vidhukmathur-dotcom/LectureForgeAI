@@ -137,7 +137,7 @@ class PowerPointProcessor:
             ppm_cmd = [
                 pdftoppm_path,
                 "-png",
-                "-r", "150",  # DPI; raise for higher-resolution slide images
+                "-r", "100",  # DPI; ~100 is plenty for 720p-1080p video frames, raise if you need sharper stills
                 pdf_path,
                 output_prefix,
             ]
