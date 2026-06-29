@@ -1,9 +1,9 @@
 """
 Location: /mount/src/lectureforgeai/src/core/video_generator.py
 """
-
 import os
 from moviepy import ImageClip, AudioFileClip, concatenate_videoclips
+
 
 class VideoGenerator:
     def __init__(self, *args, **kwargs):
@@ -18,13 +18,13 @@ class VideoGenerator:
         """
         # Load the audio to determine duration
         audio_clip = AudioFileClip(audio_path)
-        
+
         # Load the image and set its duration to match the audio
         slide_clip = ImageClip(image_path).with_duration(audio_clip.duration)
-        
+
         # Attach the audio to the image clip
         slide_clip = slide_clip.with_audio(audio_clip)
-        
+
         return slide_clip
 
     def compile_lecture_video(self, *args, **kwargs):
@@ -36,7 +36,7 @@ class VideoGenerator:
         image_dir = kwargs.get('image_dir')
         audio_dir = kwargs.get('audio_dir')
         total_slides = kwargs.get('total_slides', 0)
-        
+
         # Determine an output path fallback if app.py handles writing outside or expects it here
         # Usually it looks next to the original ppt or inside the output stack
         original_ppt = kwargs.get('original_ppt_path', 'lecture.pptx')
@@ -52,16 +52,29 @@ class VideoGenerator:
         if not audio_dir or not os.path.exists(audio_dir):
             raise ValueError(f"Invalid or missing audio directory: {audio_dir}")
 
-        # Gather and sort files numerically/alphabetically
-        slide_images = sorted([
-            os.path.join(image_dir, f) for f in os.listdir(image_dir) 
-            if f.lower().endswith(('.png', '.jpg', '.jpeg'))
-        ])
-        
-        audio_tracks = sorted([
-            os.path.join(audio_dir, f) for f in os.listdir(audio_dir) 
-            if f.lower().endswith(('.mp3', '.wav', '.aac'))
-        ])
+        # Gather and sort files using a numeric key so slide_2 sorts before
+        # slide_10 (plain alphabetical sort would put slide_10 right after
+        # slide_1, scrambling order on decks with 10+ slides)
+        def numeric_key(path):
+            import re
+            nums = re.findall(r'\d+', os.path.basename(path))
+            return int(nums[-1]) if nums else 0
+
+        slide_images = sorted(
+            [
+                os.path.join(image_dir, f) for f in os.listdir(image_dir)
+                if f.lower().endswith(('.png', '.jpg', '.jpeg'))
+            ],
+            key=numeric_key,
+        )
+
+        audio_tracks = sorted(
+            [
+                os.path.join(audio_dir, f) for f in os.listdir(audio_dir)
+                if f.lower().endswith(('.mp3', '.wav', '.aac'))
+            ],
+            key=numeric_key,
+        )
 
         # Verify we found assets matching the slide count expectations
         if not slide_images or not audio_tracks:
@@ -69,7 +82,6 @@ class VideoGenerator:
                 f"Asset directories are empty or missing media formats. "
                 f"Found {len(slide_images)} images and {len(audio_tracks)} audio files."
             )
-
         if len(slide_images) != len(audio_tracks):
             raise ValueError(
                 f"Mismatch in asset count. "
@@ -87,14 +99,22 @@ class VideoGenerator:
         # Concatenate all slide clips sequentially
         final_video = concatenate_videoclips(clips, method="compose")
 
-        # Write the final video file to disk
+        # Write the final video file to disk.
+        #
+        # Speed notes:
+        # - fps=15 is plenty for a static slideshow (image + narration, no real
+        #   motion) and noticeably faster to encode than the previous fps=24.
+        # - threads tells libx264 to use multiple CPU cores during encoding
+        #   instead of a single core. Streamlit Cloud's free tier typically
+        #   gives 2-4 cores; adjust this number to match your actual container.
         final_video.write_videofile(
-            output_path, 
-            fps=24, 
-            codec="libx264", 
-            audio_codec="aac"
+            output_path,
+            fps=15,
+            codec="libx264",
+            audio_codec="aac",
+            threads=4,
         )
-        
+
         # Close clips to release system resources
         final_video.close()
         for clip in clips:
@@ -102,5 +122,5 @@ class VideoGenerator:
 
         if logger:
             logger("Lecture compilation complete.")
-            
+
         return output_path
