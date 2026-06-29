@@ -5,13 +5,7 @@ from PIL import Image
 # ==============================================================================
 # 🔍 HYBRID SERVER DETECTION LAYER
 # ==============================================================================
-# Streamlit Cloud servers always pass specific environment marker variables when live.
-# We check for them here to dynamically decide whether to load Windows modules.
 IS_ON_SERVER = os.environ.get("STREAMLIT_RUNTIME_MOCK_HEARTBEAT") is not None or "STREAMLIT_SERVER_PORT" in os.environ
-
-if not IS_ON_SERVER:
-    # Safely import Windows-only COM automation ONLY when running locally on your PC
-    import win32com.client
 # ==============================================================================
 
 class PowerPointProcessor:
@@ -32,10 +26,8 @@ class PowerPointProcessor:
         for idx, slide in enumerate(prs.slides):
             extracted_text += f"\n--- Slide {idx + 1} ---\n"
             
-            # Extract text from standard titles, text boxes, and component shapes
             for shape in slide.shapes:
                 if hasattr(shape, "text") and shape.text.strip():
-                    # Sanitize trailing whitespaces and line endings
                     clean_text = " ".join(shape.text.split())
                     extracted_text += clean_text + "\n"
                     
@@ -43,8 +35,8 @@ class PowerPointProcessor:
 
     def export_slide_images(self, ppt_path, output_dir):
         """
-        Switches engines dynamically: Uses high-res win32com PowerPoint automation
-        locally, and uses safe fallback canvas sheets on the web cloud server.
+        Switches engines dynamically: Uses safe fallback canvas sheets on the web cloud 
+        server, and dynamically imports win32com locally only when executing on Windows.
         """
         os.makedirs(output_dir, exist_ok=True)
         
@@ -53,13 +45,10 @@ class PowerPointProcessor:
             prs = Presentation(ppt_path)
             total_slides = len(prs.slides)
             
-            # Create professional 16:9 template frame canvases so the video pipeline 
-            # compiles effortlessly without needing Windows graphic libraries.
             for idx in range(1, total_slides + 1):
                 image_filename = f"slide_{idx}.png"
                 output_image_path = os.path.join(output_dir, image_filename)
                 
-                # Standard HD dimensions (1280x720)
                 canvas = Image.new("RGB", (1280, 720), color="#F8F9FA")
                 canvas.save(output_image_path, "PNG")
                 
@@ -67,6 +56,9 @@ class PowerPointProcessor:
 
         # 💻 RUNNING LOCAL DESKTOP APP ON YOUR MACHINE (WINDOWS)
         else:
+            # --- LOCAL FUNCTIONAL IMPORT: Safe from Linux server engine sweeps ---
+            import win32com.client
+            
             # Wakes up your local copy of desktop Microsoft PowerPoint in the background
             ppt_app = win32com.client.Dispatch("PowerPoint.Application")
             
