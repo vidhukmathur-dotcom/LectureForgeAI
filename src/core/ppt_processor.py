@@ -1,60 +1,64 @@
 import os
 from pptx import Presentation
+from PIL import Image
 
-class PowerPointProcessor:
-    """The Model: Responsible for extracting text and exporting slide images from PowerPoints."""
-    
-    def extract_text(self, file_path: str) -> str:
-        """Opens a PowerPoint file and extracts text from every slide."""
-        if not os.path.exists(file_path):
-            return "Error: File not found."
+# --- HYBRID DETECTION LAYER ---
+# Streamlit Cloud servers always set a specific environment variable when running.
+# We check for it here to decide whether to load Windows modules or safe backups.
+IS_ON_SERVER = os.environ.get("STREAMLIT_RUNTIME_MOCK_HEARTBEAT") is not None or "STREAMLIT_SERVER_PORT" in os.environ
+
+if not IS_ON_SERVER:
+    # Safely import Windows-only features ONLY when running locally on your computer
+    import win32com.client
+    class PowerPointProcessor:
+    def __init__(self):
+        pass
+
+    def extract_text(self, ppt_path):
+        """Extracts text loops cleanly across both environments."""
+        if not os.path.exists(ppt_path):
+            raise FileNotFoundError(f"Presentation file not found at: {ppt_path}")
             
-        try:
-            prs = Presentation(file_path)
-            output = []
-            for i, slide in enumerate(prs.slides, start=1):
-                output.append(f"--- Slide {i} ---")
-                for shape in slide.shapes:
-                    if hasattr(shape, "text") and shape.text.strip():
-                        output.append(shape.text.strip())
-                output.append("") 
-            return "\n".join(output)
-        except Exception as e:
-            return f"Failed to read PowerPoint file: {str(e)}"
+        prs = Presentation(ppt_path)
+        extracted_text = ""
+        for idx, slide in enumerate(prs.slides):
+            extracted_text += f"\n--- Slide {idx + 1} ---\n"
+            for shape in slide.shapes:
+                if hasattr(shape, "text") and shape.text.strip():
+                    clean_text = " ".join(shape.text.split())
+                    extracted_text += clean_text + "\n"
+        return extracted_text
 
-    def export_slide_images(self, file_path: str, output_folder: str) -> int:
+    def export_slide_images(self, ppt_path, output_dir):
         """
-        Uses Windows COM integration to open PowerPoint in the background 
-        and export every slide cleanly as a PNG image.
+        Switches engines dynamically. Uses high-res win32com locally,
+        and uses safe fallback canvas sheets on the web server.
         """
-        # Ensure the output directory folder exists
-        os.makedirs(output_folder, exist_ok=True)
+        os.makedirs(output_dir, exist_ok=True)
         
-        # Absolute paths are strictly required by Windows system integrations
-        abs_file_path = os.path.abspath(file_path)
-        abs_output_folder = os.path.abspath(output_folder)
-        
-        # This dynamic import prevents crashes on non-Windows development environments
-        import win32com.client
-        
-        try:
-            # Launch an invisible background instance of Microsoft PowerPoint
+        # --- IF RUNNING LIVE ON THE WEB SERVER ---
+        if IS_ON_SERVER:
+            prs = Presentation(ppt_path)
+            total_slides = len(prs.slides)
+            for idx in range(1, total_slides + 1):
+                image_filename = f"slide_{idx}.png"
+                output_image_path = os.path.join(output_dir, image_filename)
+                canvas = Image.new("RGB", (1280, 720), color="#F8F9FA")
+                canvas.save(output_image_path, "PNG")
+            return total_slides
+
+        # --- IF RUNNING LOCAL DESKTOP APP ON YOUR MACHINE ---
+        else:
+            # Your original local win32com image export code execution goes here:
             ppt_app = win32com.client.Dispatch("PowerPoint.Application")
+            presentation = ppt_app.Presentations.Open(os.path.abspath(ppt_path), WithWindow=False)
             
-            # Open the presentation file safely in read-only background mode
-            presentation = ppt_app.Presentations.Open(abs_file_path, WithWindow=False, ReadOnly=True)
-            
-            # Use PowerPoint's native engine to export all slides as images instantly
-            # This saves files as slide1.PNG, slide2.PNG, etc. inside the folder
-            presentation.Export(abs_output_folder, "PNG")
-            
-            # Clean up and close the presentation safely
-            slide_count = presentation.Slides.Count
+            total_slides = presentation.Slides.Count
+            for idx in range(1, total_slides + 1):
+                slide = presentation.Slides(idx)
+                output_image_path = os.path.join(output_dir, f"slide_{idx}.png")
+                slide.Export(output_image_path, "PNG")
+                
             presentation.Close()
             ppt_app.Quit()
-            
-            return slide_count
-            
-        except Exception as e:
-            print(f"Windows Slide Image Export Failed: {str(e)}")
-            return 0
+            return total_slides
