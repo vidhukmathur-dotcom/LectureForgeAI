@@ -27,7 +27,7 @@ class VideoGenerator:
         
         return slide_clip
 
-    def generate_video(self, slide_images: list, audio_tracks: list, output_path: str):
+    def compile_lecture_video(self, slide_images: list, audio_tracks: list, output_path: str):
         """
         Stitches multiple slides and audio tracks into a final lecture video.
         
