@@ -2,14 +2,13 @@
 Location: /mount/src/lectureforgeai/src/core/video_generator.py
 """
 
-# Alternative MoviePy v2.x top-level namespace imports
+import os
 from moviepy import ImageClip, AudioFileClip, concatenate_videoclips
 
 class VideoGenerator:
     def __init__(self, *args, **kwargs):
         """
         Initializes the VideoGenerator engine for LectureForgeAI.
-        Accepts any configuration arguments passed by the factory.
         """
         pass
 
@@ -31,29 +30,54 @@ class VideoGenerator:
     def compile_lecture_video(self, *args, **kwargs):
         """
         Stitches multiple slides and audio tracks into a final lecture video.
-        Flexibly extracts arguments whether passed positionally or via keywords.
+        Dynamically resolves paths from image_dir and audio_dir.
         """
-        # 1. Extract slide_images (Check positional index 0, then keywords)
-        slide_images = args[0] if len(args) > 0 else kwargs.get('slide_images') or kwargs.get('image_paths') or kwargs.get('images')
+        # Extract environment variables sent by app.py
+        image_dir = kwargs.get('image_dir')
+        audio_dir = kwargs.get('audio_dir')
+        total_slides = kwargs.get('total_slides', 0)
         
-        # 2. Extract audio_tracks (Check positional index 1, then keywords)
-        audio_tracks = args[1] if len(args) > 1 else kwargs.get('audio_tracks') or kwargs.get('audio_paths') or kwargs.get('audios')
-        
-        # 3. Extract output_path (Check positional index 2, then keywords)
-        output_path = args[2] if len(args) > 2 else kwargs.get('output_path') or kwargs.get('output_file') or kwargs.get('video_path')
+        # Determine an output path fallback if app.py handles writing outside or expects it here
+        # Usually it looks next to the original ppt or inside the output stack
+        original_ppt = kwargs.get('original_ppt_path', 'lecture.pptx')
+        output_path = kwargs.get('output_path') or os.path.splitext(original_ppt)[0] + ".mp4"
 
-        # Fallback validation check
-        if not slide_images or not audio_tracks or not output_path:
+        # Log progress if callback exists
+        logger = kwargs.get('logger_callback')
+        if logger:
+            logger("Resolving assets from directories...")
+
+        if not image_dir or not os.path.exists(image_dir):
+            raise ValueError(f"Invalid or missing image directory: {image_dir}")
+        if not audio_dir or not os.path.exists(audio_dir):
+            raise ValueError(f"Invalid or missing audio directory: {audio_dir}")
+
+        # Gather and sort files numerically/alphabetically
+        slide_images = sorted([
+            os.path.join(image_dir, f) for f in os.listdir(image_dir) 
+            if f.lower().endswith(('.png', '.jpg', '.jpeg'))
+        ])
+        
+        audio_tracks = sorted([
+            os.path.join(audio_dir, f) for f in os.listdir(audio_dir) 
+            if f.lower().endswith(('.mp3', '.wav', '.aac'))
+        ])
+
+        # Verify we found assets matching the slide count expectations
+        if not slide_images or not audio_tracks:
             raise ValueError(
-                f"Missing required video compilation data. "
-                f"Received slide_images: {bool(slide_images)}, "
-                f"audio_tracks: {bool(audio_tracks)}, "
-                f"output_path: {bool(output_path)}. "
-                f"Full kwargs keys: {list(kwargs.keys())}"
+                f"Asset directories are empty or missing media formats. "
+                f"Found {len(slide_images)} images and {len(audio_tracks)} audio files."
             )
 
         if len(slide_images) != len(audio_tracks):
-            raise ValueError("The number of slide images must match the number of audio tracks.")
+            raise ValueError(
+                f"Mismatch in asset count. "
+                f"Found {len(slide_images)} images and {len(audio_tracks)} audio tracks."
+            )
+
+        if logger:
+            logger(f"Compiling {len(slide_images)} slides into {output_path}...")
 
         clips = []
         for img, audio in zip(slide_images, audio_tracks):
@@ -75,3 +99,8 @@ class VideoGenerator:
         final_video.close()
         for clip in clips:
             clip.close()
+
+        if logger:
+            logger("Lecture compilation complete.")
+            
+        return output_path
