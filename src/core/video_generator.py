@@ -2,10 +2,8 @@
 Location: /mount/src/lectureforgeai/src/core/video_generator.py
 """
 
-# MoviePy v2.x compatibility imports
-from moviepy.video.VideoClip import ImageClip
-from moviepy.audio.io.AudioFileClip import AudioFileClip
-from moviepy.video.compositing import concatenate_videoclips
+# Alternative MoviePy v2.x top-level namespace imports
+from moviepy import ImageClip, AudioFileClip, concatenate_videoclips
 
 class VideoGenerator:
     def __init__(self):
@@ -49,7 +47,6 @@ class VideoGenerator:
         final_video = concatenate_videoclips(clips, method="compose")
 
         # Write the final video file to disk
-        # (Using libx264/aac for universal web and Streamlit compatibility)
         final_video.write_videofile(
             output_path, 
             fps=24, 
