@@ -1,6 +1,7 @@
 import streamlit as st
 import os
 import re
+import shutil
 from src.core.ppt_processor import PowerPointProcessor
 from src.core.ai_engine import AIEngine
 from src.core.doc_generator import DocumentGenerator
@@ -102,6 +103,15 @@ if uploaded_file is not None:
             # Setup clean structural loader hooks
             status_container = st.empty()
             progress_bar = st.progress(0)
+
+            # Wipe any leftover slide images / audio from a previous run.
+            # Without this, leftover slide_N.png / slide_N.mp3 files from an
+            # earlier (and possibly longer) presentation can stick around
+            # and get pulled into THIS video, since video_generator simply
+            # globs every file sitting in these folders.
+            for stale_dir in (img_dir, audio_dir):
+                shutil.rmtree(stale_dir, ignore_errors=True)
+                os.makedirs(stale_dir, exist_ok=True)
 
             try:
                 # Phase 1: PowerPoint Text Parsing Extraction
