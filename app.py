@@ -28,8 +28,9 @@ with st.expander("📖 New User Guide: How to compile your first lecture video",
 2. **🎙️ Choose an Academic Voice**
    * Select your preferred instructional tone and accent from the **Voice Accent Profile** dropdown menu (e.g., *Male — US Academic* or *Female — Indian Classroom*).
 
-3. **📂 Upload Your PowerPoint Deck**
-   * Drag and drop your lecture presentation file (`.pptx`) into the upload area below.
+3. **📂 Upload Your Lecture Deck (as PDF)**
+   * Export your presentation to PDF first — in PowerPoint: File → Export → Create PDF/XPS. In Google Slides: File → Download → PDF Document. Both are one-click.
+   * Drag and drop the resulting `.pdf` file into the upload area below.
 
 4. **⚙️ Process & Download**
    * Click **Process Presentation Deck**. The AI engine will extract your slides, write a natural conversational script, record the narration, and combine everything into a high-definition video.
@@ -66,7 +67,11 @@ selected_voice_label = st.sidebar.selectbox("Premium Voice Accent Profile:", lis
 selected_voice = voice_map[selected_voice_label]
 
 # 2. FILE UPLOADER PORTAL
-uploaded_file = st.file_uploader("📂 Drop your lecture PowerPoint presentation here (.pptx)", type=["pptx"])
+uploaded_file = st.file_uploader("📂 Drop your lecture presentation here (.pdf)", type=["pdf"])
+st.caption(
+    "💡 Export your deck to PDF first (File → Export/Save As PDF in PowerPoint or Google Slides — "
+    "a one-click action) then upload the PDF here. This keeps rendering fast and reliable on the server."
+)
 
 if uploaded_file is not None:
     # Set up clean internal directory frameworks for web media assets
@@ -129,26 +134,51 @@ if uploaded_file is not None:
                 progress_bar.progress(50)
                 ai_script = ai_engine.generate_lecture_narration(extracted_text)
 
-                # Dynamic slide boundary regex script parser layout splitting
-                raw_chunks = re.split(r'(?i)(?:---|\*\*)*\s*slide\s*\d+\s*(?:---|\*\*|:)*', ai_script)
-                first_marker_match = re.search(r'(?i)(?:---|\*\*)*\s*slide\s*1\s*(?:---|\*\*|:)*', ai_script)
+                # Slide boundary parsing.
+                #
+                # Map narration text to slide numbers EXPLICITLY by capturing
+                # the number from each marker, rather than relying on
+                # positional order of split chunks. This matters because on
+                # longer presentations:
+                #   1. The AI sometimes casually references an earlier slide
+                #      mid-narration ("as we saw in Slide 9 earlier..."),
+                #      which a loose regex would misread as a real section
+                #      marker, fragmenting that slide's text and shifting
+                #      everything after it by one position.
+                #   2. LLMs can drift from formatting instructions over long
+                #      generations, occasionally dropping the "--- Slide N ---"
+                #      header for some slide partway through.
+                # Both failure modes corrupt every slide AFTER the point of
+                # failure when matching positionally. Keying by the captured
+                # number instead means a single missing/false-positive marker
+                # only affects that one slide, not the rest of the deck.
+                #
+                # The pattern also requires the marker to occupy its own line
+                # (anchored with ^...$ in MULTILINE mode), which filters out
+                # most casual in-text mentions of "Slide N" that don't look
+                # like a genuine structural header.
+                slide_marker_pattern = re.compile(
+                    r'^[ \t]*(?:-{2,}|\*{2,})?[ \t]*slide[ \t]+(\d+)[ \t]*(?:-{2,}|\*{2,}|:)?[ \t]*$',
+                    re.IGNORECASE | re.MULTILINE,
+                )
+                marker_matches = list(slide_marker_pattern.finditer(ai_script))
 
-                if first_marker_match and raw_chunks:
-                    intro_text = ai_script[:first_marker_match.start()].strip()
-                    remaining_chunks = raw_chunks[1:]
-                    if remaining_chunks:
-                        if intro_text:
-                            remaining_chunks[0] = f"{intro_text}\n\n{remaining_chunks[0]}"
-                        valid_chunks = [chunk.strip() for chunk in remaining_chunks]
-                    else:
-                        valid_chunks = []
-                else:
-                    valid_chunks = [chunk.strip() for chunk in raw_chunks if chunk.strip()]
+                slide_text_by_number = {}
+                for i, match in enumerate(marker_matches):
+                    slide_num = int(match.group(1))
+                    start = match.end()
+                    end = marker_matches[i + 1].start() if i + 1 < len(marker_matches) else len(ai_script)
+                    chunk_text = ai_script[start:end].strip()
+                    # If a slide number appears more than once, keep the
+                    # first occurrence rather than overwriting it with a
+                    # likely-spurious later match.
+                    if chunk_text and slide_num not in slide_text_by_number:
+                        slide_text_by_number[slide_num] = chunk_text
 
                 slide_scripts = []
                 for idx in range(1, total_slides + 1):
-                    if (idx - 1) < len(valid_chunks) and valid_chunks[idx - 1]:
-                        slide_scripts.append(valid_chunks[idx - 1])
+                    if slide_text_by_number.get(idx):
+                        slide_scripts.append(slide_text_by_number[idx])
                     else:
                         slide_scripts.append(f"Moving forward to slide {idx}.")
 
@@ -193,7 +223,7 @@ if uploaded_file is not None:
                             st.download_button(
                                 label="📥 Download Lecture Video (.mp4)",
                                 data=video_file,
-                                file_name=f"LectureForge_{uploaded_file.name.replace('.pptx', '')}.mp4",
+                                file_name=f"LectureForge_{uploaded_file.name.replace('.pdf', '')}.mp4",
                                 mime="video/mp4",
                                 use_container_width=True
                             )
