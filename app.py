@@ -80,6 +80,12 @@ if uploaded_file is not None:
     # file -- and would strain both processing time and Streamlit Cloud's
     # memory ceiling. This blocks outright rather than just warning, since
     # there's no reasonable "proceed anyway" case for a deck this size.
+    #
+    # NOTE: this value should match maxUploadSize in .streamlit/config.toml,
+    # which controls what Streamlit's file_uploader widget itself displays
+    # and enforces ("Limit XXMB per file"). This check here is a second
+    # layer of defense in case that config isn't present (e.g. running
+    # locally without the .streamlit folder) -- keep both numbers in sync.
     MAX_UPLOAD_SIZE_MB = 30
     file_size_mb = uploaded_file.size / (1024 * 1024)
     if file_size_mb > MAX_UPLOAD_SIZE_MB:
@@ -211,6 +217,21 @@ if uploaded_file is not None:
                 # identity is the array index -- there's no marker-parsing
                 # step left that could misalign slides, even on long decks.
                 slide_scripts = ai_engine.generate_lecture_narration(extracted_text, total_slides)
+
+                # Guard against empty narration text reaching the TTS step.
+                # Image-only slides (no extractable text -- a photo, chart,
+                # or diagram with no text layer) sometimes cause the AI to
+                # return an empty string for that slide's entry, since there
+                # was no source text to work from. Feeding an empty string
+                # to edge-tts is a likely source of TTS failures, which then
+                # surface downstream as "missing audio for slide N" -- so
+                # this is caught and replaced here, before that can happen.
+                for idx in range(len(slide_scripts)):
+                    if not slide_scripts[idx] or not slide_scripts[idx].strip():
+                        slide_scripts[idx] = (
+                            f"This slide presents a visual element without accompanying text. "
+                            f"Let's take a moment to look at it before moving forward."
+                        )
 
                 # Build a human-readable combined script (with slide headers)
                 # for the Word backup document and the on-screen script preview.
