@@ -2,6 +2,7 @@
 Location: /mount/src/lectureforgeai/src/core/video_generator.py
 """
 import os
+import re
 from moviepy import ImageClip, AudioFileClip, concatenate_videoclips
 
 
@@ -52,47 +53,74 @@ class VideoGenerator:
         if not audio_dir or not os.path.exists(audio_dir):
             raise ValueError(f"Invalid or missing audio directory: {audio_dir}")
 
-        # Gather and sort files using a numeric key so slide_2 sorts before
-        # slide_10 (plain alphabetical sort would put slide_10 right after
-        # slide_1, scrambling order on decks with 10+ slides)
-        def numeric_key(path):
-            import re
-            nums = re.findall(r'\d+', os.path.basename(path))
-            return int(nums[-1]) if nums else 0
+        # Gather files and key them EXPLICITLY by slide number, rather than
+        # sorting images and audio independently and assuming position i in
+        # one list corresponds to position i in the other.
+        #
+        # That assumption is fragile: if even one file is missing on either
+        # side (a failed audio generation that didn't raise loudly, a
+        # skipped image render, etc.), every slide after the gap silently
+        # shifts out of alignment with its audio -- with no error, just a
+        # video where image and narration drift apart partway through.
+        #
+        # Keying explicitly by the number extracted from each filename
+        # makes mismatches IMPOSSIBLE to silently paper over: if slide 14's
+        # audio is missing, slide 14 is reported as missing, not silently
+        # filled in with slide 15's audio shifted into its place.
+        def extract_slide_number(filename):
+            nums = re.findall(r'\d+', os.path.basename(filename))
+            return int(nums[-1]) if nums else None
 
-        slide_images = sorted(
-            [
-                os.path.join(image_dir, f) for f in os.listdir(image_dir)
-                if f.lower().endswith(('.png', '.jpg', '.jpeg'))
-            ],
-            key=numeric_key,
-        )
+        image_files = [
+            os.path.join(image_dir, f) for f in os.listdir(image_dir)
+            if f.lower().endswith(('.png', '.jpg', '.jpeg'))
+        ]
+        audio_files = [
+            os.path.join(audio_dir, f) for f in os.listdir(audio_dir)
+            if f.lower().endswith(('.mp3', '.wav', '.aac'))
+        ]
 
-        audio_tracks = sorted(
-            [
-                os.path.join(audio_dir, f) for f in os.listdir(audio_dir)
-                if f.lower().endswith(('.mp3', '.wav', '.aac'))
-            ],
-            key=numeric_key,
-        )
+        images_by_number = {}
+        for path in image_files:
+            num = extract_slide_number(path)
+            if num is not None:
+                images_by_number[num] = path
+
+        audio_by_number = {}
+        for path in audio_files:
+            num = extract_slide_number(path)
+            if num is not None:
+                audio_by_number[num] = path
 
         # Verify we found assets matching the slide count expectations
-        if not slide_images or not audio_tracks:
+        if not images_by_number or not audio_by_number:
             raise ValueError(
                 f"Asset directories are empty or missing media formats. "
-                f"Found {len(slide_images)} images and {len(audio_tracks)} audio files."
+                f"Found {len(images_by_number)} images and {len(audio_by_number)} audio files."
             )
-        if len(slide_images) != len(audio_tracks):
+
+        expected_numbers = set(range(1, total_slides + 1)) if total_slides else (
+            set(images_by_number.keys()) | set(audio_by_number.keys())
+        )
+        missing_images = sorted(n for n in expected_numbers if n not in images_by_number)
+        missing_audio = sorted(n for n in expected_numbers if n not in audio_by_number)
+
+        if missing_images or missing_audio:
             raise ValueError(
-                f"Mismatch in asset count. "
-                f"Found {len(slide_images)} images and {len(audio_tracks)} audio tracks."
+                f"Missing assets detected -- cannot guarantee correct slide/audio "
+                f"alignment. Missing images for slide(s): {missing_images or 'none'}. "
+                f"Missing audio for slide(s): {missing_audio or 'none'}."
             )
+
+        slide_numbers_in_order = sorted(expected_numbers)
 
         if logger:
-            logger(f"Compiling {len(slide_images)} slides into {output_path}...")
+            logger(f"Compiling {len(slide_numbers_in_order)} slides into {output_path}...")
 
         clips = []
-        for img, audio in zip(slide_images, audio_tracks):
+        for slide_num in slide_numbers_in_order:
+            img = images_by_number[slide_num]
+            audio = audio_by_number[slide_num]
             slide_clip = self.create_slide_clip(img, audio)
             clips.append(slide_clip)
 
