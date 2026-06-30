@@ -1,6 +1,5 @@
 import streamlit as st
 import os
-import re
 import shutil
 from src.core.ppt_processor import PowerPointProcessor
 from src.core.ai_engine import AIEngine
@@ -132,55 +131,21 @@ if uploaded_file is not None:
                 # Phase 3: Llama 3.3 Prompting via Groq Ecosystem
                 status_container.info("⚙️ Step 3/5: Consulting Groq Llama 3.3 to structure balanced lecture narration script...")
                 progress_bar.progress(50)
-                ai_script = ai_engine.generate_lecture_narration(extracted_text)
 
-                # Slide boundary parsing.
-                #
-                # Map narration text to slide numbers EXPLICITLY by capturing
-                # the number from each marker, rather than relying on
-                # positional order of split chunks. This matters because on
-                # longer presentations:
-                #   1. The AI sometimes casually references an earlier slide
-                #      mid-narration ("as we saw in Slide 9 earlier..."),
-                #      which a loose regex would misread as a real section
-                #      marker, fragmenting that slide's text and shifting
-                #      everything after it by one position.
-                #   2. LLMs can drift from formatting instructions over long
-                #      generations, occasionally dropping the "--- Slide N ---"
-                #      header for some slide partway through.
-                # Both failure modes corrupt every slide AFTER the point of
-                # failure when matching positionally. Keying by the captured
-                # number instead means a single missing/false-positive marker
-                # only affects that one slide, not the rest of the deck.
-                #
-                # The pattern also requires the marker to occupy its own line
-                # (anchored with ^...$ in MULTILINE mode), which filters out
-                # most casual in-text mentions of "Slide N" that don't look
-                # like a genuine structural header.
-                slide_marker_pattern = re.compile(
-                    r'^[ \t]*(?:-{2,}|\*{2,})?[ \t]*slide[ \t]+(\d+)[ \t]*(?:-{2,}|\*{2,}|:)?[ \t]*$',
-                    re.IGNORECASE | re.MULTILINE,
+                # Generate narration for the WHOLE deck in one call (so the
+                # model retains full context across slides for natural
+                # narrative flow), but request strict JSON array output
+                # instead of free-form text with hand-typed markers. Slide
+                # identity is the array index -- there's no marker-parsing
+                # step left that could misalign slides, even on long decks.
+                slide_scripts = ai_engine.generate_lecture_narration(extracted_text, total_slides)
+
+                # Build a human-readable combined script (with slide headers)
+                # for the Word backup document and the on-screen script preview.
+                ai_script = "\n\n".join(
+                    f"--- Slide {idx} ---\n{text}"
+                    for idx, text in enumerate(slide_scripts, start=1)
                 )
-                marker_matches = list(slide_marker_pattern.finditer(ai_script))
-
-                slide_text_by_number = {}
-                for i, match in enumerate(marker_matches):
-                    slide_num = int(match.group(1))
-                    start = match.end()
-                    end = marker_matches[i + 1].start() if i + 1 < len(marker_matches) else len(ai_script)
-                    chunk_text = ai_script[start:end].strip()
-                    # If a slide number appears more than once, keep the
-                    # first occurrence rather than overwriting it with a
-                    # likely-spurious later match.
-                    if chunk_text and slide_num not in slide_text_by_number:
-                        slide_text_by_number[slide_num] = chunk_text
-
-                slide_scripts = []
-                for idx in range(1, total_slides + 1):
-                    if slide_text_by_number.get(idx):
-                        slide_scripts.append(slide_text_by_number[idx])
-                    else:
-                        slide_scripts.append(f"Moving forward to slide {idx}.")
 
                 # Save out raw narration text outline over to Microsoft Word framework files
                 doc_generator.save_narration_to_word(ai_script, temp_ppt_path)
