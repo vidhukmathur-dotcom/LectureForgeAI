@@ -115,16 +115,40 @@ class AudioGenerator:
 
         semaphore = asyncio.Semaphore(max_concurrent)
 
-        async def _synthesize_one(text, output_path):
+        async def _synthesize_one(slide_num, text, output_path):
             safe_text = _sanitize_for_tts(text)
             async with semaphore:
-                communicate = edge_tts.Communicate(safe_text, voice_profile)
-                await communicate.save(output_path)
+                try:
+                    print(f"[AudioGenerator] Starting slide {slide_num} -> {output_path}")
+                    communicate = edge_tts.Communicate(safe_text, voice_profile)
+                    await communicate.save(output_path)
+
+                    # Verify the file actually landed on disk with real
+                    # content, not just that the call returned without
+                    # raising. A 0-byte or missing file with no exception
+                    # would otherwise pass through silently undetected.
+                    if not os.path.exists(output_path):
+                        raise RuntimeError(
+                            f"edge_tts.save() returned without error, but no file "
+                            f"exists at {output_path}"
+                        )
+                    file_size = os.path.getsize(output_path)
+                    if file_size == 0:
+                        raise RuntimeError(
+                            f"edge_tts.save() produced a 0-byte file at {output_path}"
+                        )
+
+                    print(f"[AudioGenerator] Finished slide {slide_num}: {file_size} bytes")
+                    return output_path
+
+                except Exception as e:
+                    print(f"[AudioGenerator] FAILED slide {slide_num}: {type(e).__name__}: {e}")
+                    raise
 
         async def _synthesize_all():
             tasks = [
-                _synthesize_one(text, path)
-                for text, path in zip(slide_scripts, output_paths)
+                _synthesize_one(idx + 1, text, path)
+                for idx, (text, path) in enumerate(zip(slide_scripts, output_paths))
             ]
             # return_exceptions=True is the critical fix: without it, one
             # failing task cancels every other in-flight task immediately,
