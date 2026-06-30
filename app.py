@@ -73,6 +73,25 @@ st.caption(
 )
 
 if uploaded_file is not None:
+    # Guard 1: File size sanity check, before any disk writes or processing.
+    # A standard slide-deck PDF (15-30 slides) is typically well under 20MB.
+    # Anything dramatically larger usually signals something unintended --
+    # embedded video, uncompressed high-res images, or simply the wrong
+    # file -- and would strain both processing time and Streamlit Cloud's
+    # memory ceiling. This blocks outright rather than just warning, since
+    # there's no reasonable "proceed anyway" case for a deck this size.
+    MAX_UPLOAD_SIZE_MB = 30
+    file_size_mb = uploaded_file.size / (1024 * 1024)
+    if file_size_mb > MAX_UPLOAD_SIZE_MB:
+        st.error(
+            f"⚠️ This file is {file_size_mb:.1f}MB, which is larger than the "
+            f"{MAX_UPLOAD_SIZE_MB}MB limit for this tool. A typical 15-30 slide "
+            f"deck PDF should be well under this. If your file is genuinely this "
+            f"large, it may contain embedded video or very high-resolution images "
+            f"-- try re-exporting with image compression enabled."
+        )
+        st.stop()
+
     # Set up clean internal directory frameworks for web media assets
     workspace_dir = os.path.join(os.getcwd(), "web_workspace")
     img_dir = os.path.join(workspace_dir, "images")
@@ -95,14 +114,26 @@ if uploaded_file is not None:
     audio_generator = AudioGenerator()
     video_generator = VideoGenerator()
 
-    # Heuristic check: does this PDF look like an exported slide deck
-    # (wide landscape pages) rather than a general document (portrait
-    # pages, e.g. a Word export or research paper)? This is a warning,
-    # not a hard block -- some legitimate decks may use unusual custom
-    # page sizes, and we don't want to stop someone from proceeding if
-    # they know what they're doing.
+    # Guard 2 + presentation-shape check, combined: this app is built and
+    # tested for 15-30 slide decks. A much larger PDF means dramatically
+    # more Groq calls, TTS calls, and image renders than tested -- a real
+    # risk for both cost and Streamlit Cloud's memory ceiling. This warns
+    # rather than hard-blocks, since a 35-40 slide deck will likely still
+    # work, just slower; only an extreme outlier gets a stronger caution.
+    MAX_RECOMMENDED_SLIDES = 40
     try:
         validation_result = ppt_processor.validate_is_presentation(temp_ppt_path)
+        total_pages_detected = validation_result["total_pages"]
+
+        if total_pages_detected > MAX_RECOMMENDED_SLIDES:
+            st.warning(
+                f"⚠️ This PDF has {total_pages_detected} pages. This tool is built "
+                f"and tested for decks of roughly 15-30 slides. A deck this large "
+                f"will take significantly longer to process and may be more likely "
+                f"to hit server resource limits. You can still proceed, but consider "
+                f"splitting very long decks into smaller sections if you run into issues."
+            )
+
         if not validation_result["is_likely_presentation"]:
             st.warning(
                 "⚠️ This PDF doesn't look like an exported slide presentation "
@@ -122,11 +153,29 @@ if uploaded_file is not None:
     if api_key_input:
         ai_engine.api_key = api_key_input
 
-    if st.button("🚀 Process Presentation Deck", type="primary"):
+    # Guard 3: prevent overlapping runs from a double-click or impatient
+    # re-click while a previous run is still processing. Without this, two
+    # concurrent runs could write to the same web_workspace folders at once,
+    # reintroducing the exact slide/audio mixing bug fixed earlier.
+    if "is_processing" not in st.session_state:
+        st.session_state.is_processing = False
+
+    process_clicked = st.button(
+        "🚀 Process Presentation Deck",
+        type="primary",
+        disabled=st.session_state.is_processing,
+    )
+
+    if st.session_state.is_processing:
+        st.info("⏳ A video is already being processed. Please wait for it to finish before starting another.")
+
+    if process_clicked:
         # --- FIXED: Variable name now matches api_key_input perfectly ---
         if not api_key_input:
             st.error("⚠️ Please supply a valid Groq API key in the sidebar configuration to execute.")
         else:
+            st.session_state.is_processing = True
+
             # Setup clean structural loader hooks
             status_container = st.empty()
             progress_bar = st.progress(0)
@@ -197,6 +246,7 @@ if uploaded_file is not None:
                 # Master UI state display completion update pass
                 progress_bar.progress(100)
                 status_container.success("🎯 Academic Lecture Audio & Video Compiled Successfully!")
+                st.session_state.is_processing = False
 
                 # Render Clean Browser View Split Panel Display Output Previews
                 col1, col2 = st.columns([1, 1])
@@ -222,3 +272,4 @@ if uploaded_file is not None:
             except Exception as e:
                 progress_bar.empty()
                 status_container.error(f"❌ Processing engine thread aborted: {str(e)}")
+                st.session_state.is_processing = False
