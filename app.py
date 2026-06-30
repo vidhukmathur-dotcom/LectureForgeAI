@@ -95,6 +95,29 @@ if uploaded_file is not None:
     audio_generator = AudioGenerator()
     video_generator = VideoGenerator()
 
+    # Heuristic check: does this PDF look like an exported slide deck
+    # (wide landscape pages) rather than a general document (portrait
+    # pages, e.g. a Word export or research paper)? This is a warning,
+    # not a hard block -- some legitimate decks may use unusual custom
+    # page sizes, and we don't want to stop someone from proceeding if
+    # they know what they're doing.
+    try:
+        validation_result = ppt_processor.validate_is_presentation(temp_ppt_path)
+        if not validation_result["is_likely_presentation"]:
+            st.warning(
+                "⚠️ This PDF doesn't look like an exported slide presentation "
+                "(its page proportions don't match standard 16:9 / 4:3 / 16:10 "
+                "slide dimensions). It may be a regular document instead. "
+                "You can still proceed, but slide images and narration may "
+                "not turn out well — dense paragraph text doesn't render or "
+                "narrate cleanly as a 'slide'. For best results, upload a PDF "
+                "exported directly from PowerPoint or Google Slides."
+            )
+    except Exception:
+        # Don't let a validation hiccup block the user from proceeding --
+        # this check is purely advisory.
+        pass
+
     # Override engine credentials using the browser side input text value dynamically
     if api_key_input:
         ai_engine.api_key = api_key_input
