@@ -29,8 +29,74 @@ class PowerPointProcessor:
     Internally, this now processes PDF files.
     """
 
+    # Standard presentation aspect ratios (width/height), with a tolerance
+    # band around each to account for minor export rounding differences.
+    _PRESENTATION_ASPECT_RATIOS = {
+        "16:9": 16 / 9,    # widescreen, most common modern export
+        "4:3": 4 / 3,      # classic/older presentation standard
+        "16:10": 16 / 10,  # less common widescreen variant
+    }
+    _ASPECT_RATIO_TOLERANCE = 0.05  # ~5% wiggle room either side
+
     def __init__(self):
         pass
+
+    def validate_is_presentation(self, pdf_path) -> dict:
+        """
+        Heuristic check for whether a PDF looks like an exported slide
+        presentation rather than a general document (report, paper, Word
+        export, etc.).
+
+        Presentation software (PowerPoint, Google Slides) exports pages in
+        wide landscape aspect ratios (16:9, 4:3, 16:10). Standard documents
+        are typically portrait-oriented (A4 ~ 210:297, Letter ~ 8.5:11) --
+        the opposite orientation and a very different ratio. Checking the
+        first page's aspect ratio is a cheap, reliable-enough signal,
+        though not foolproof (e.g. someone could export an unusual custom
+        page size). This is meant as a helpful warning, not a hard gate.
+
+        Returns:
+            dict with keys:
+                - is_likely_presentation (bool)
+                - matched_ratio (str or None): which standard ratio it matched, if any
+                - width (float), height (float): first page dimensions in points
+                - total_pages (int)
+        """
+        if not os.path.exists(pdf_path):
+            raise FileNotFoundError(f"PDF file not found at: {pdf_path}")
+
+        doc = fitz.open(pdf_path)
+        total_pages = len(doc)
+
+        if total_pages == 0:
+            doc.close()
+            raise ValueError(f"PDF at '{pdf_path}' contains no pages.")
+
+        first_page = doc[0]
+        width = first_page.rect.width
+        height = first_page.rect.height
+        doc.close()
+
+        if height <= 0:
+            actual_ratio = 0
+        else:
+            actual_ratio = width / height
+
+        matched_ratio = None
+        for ratio_name, ratio_value in self._PRESENTATION_ASPECT_RATIOS.items():
+            lower_bound = ratio_value * (1 - self._ASPECT_RATIO_TOLERANCE)
+            upper_bound = ratio_value * (1 + self._ASPECT_RATIO_TOLERANCE)
+            if lower_bound <= actual_ratio <= upper_bound:
+                matched_ratio = ratio_name
+                break
+
+        return {
+            "is_likely_presentation": matched_ratio is not None,
+            "matched_ratio": matched_ratio,
+            "width": width,
+            "height": height,
+            "total_pages": total_pages,
+        }
 
     def extract_text(self, pdf_path):
         """
