@@ -121,6 +121,10 @@ st.sidebar.markdown(
     unsafe_allow_html=True,
 )
 
+st.sidebar.markdown(
+    "📋 [Share your feedback](https://forms.gle/Ta5rhbE7C8Ssi84k6)",
+)
+
 # 2. FILE UPLOADER PORTAL
 uploaded_file = st.file_uploader("📂 Drop your lecture presentation here (.pdf)", type=["pdf"])
 st.caption(
