@@ -279,6 +279,30 @@ if uploaded_file is not None:
                 dbg(f"audio files after generation: {audio_files_after}")
                 dbg(f"image files: {img_files_after}")
 
+                # Write what video_generator will actually see into the debug log
+                import re as _re
+                def _test_extract(path):
+                    nums = _re.findall(r'\d+', os.path.basename(path))
+                    return int(nums[-1]) if nums else None
+
+                test_audio = {
+                    _test_extract(os.path.join(audio_dir, f)): f
+                    for f in os.listdir(audio_dir)
+                    if f.lower().endswith(('.mp3', '.wav', '.aac'))
+                }
+                test_images = {
+                    _test_extract(os.path.join(img_dir, f)): f
+                    for f in os.listdir(img_dir)
+                    if f.lower().endswith(('.png', '.jpg', '.jpeg'))
+                }
+                dbg(f"audio_by_number keys: {sorted(test_audio.keys())}")
+                dbg(f"images_by_number keys: {sorted(test_images.keys())}")
+                dbg(f"expected_numbers: {list(range(1, total_slides + 1))}")
+                missing_a = [n for n in range(1, total_slides + 1) if n not in test_audio]
+                missing_i = [n for n in range(1, total_slides + 1) if n not in test_images]
+                dbg(f"missing audio keys: {missing_a}")
+                dbg(f"missing image keys: {missing_i}")
+
                 # Phase 5: Final Video Compilation Layout Assembly
                 status_container.info("⚙️ Step 5/5: Compiling timeline arrays and formatting final lecture video...")
                 progress_bar.progress(90)
