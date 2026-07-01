@@ -195,10 +195,18 @@ if uploaded_file is not None:
                 shutil.rmtree(stale_dir, ignore_errors=True)
                 os.makedirs(stale_dir, exist_ok=True)
 
-            print(f"[DEBUG-INIT] cwd={os.getcwd()}")
-            print(f"[DEBUG-INIT] workspace_dir={workspace_dir}")
-            print(f"[DEBUG-INIT] audio_dir={audio_dir}, exists={os.path.exists(audio_dir)}")
-            print(f"[DEBUG-INIT] img_dir={img_dir}, exists={os.path.exists(img_dir)}")
+            # Write debug info to a file since Streamlit Cloud's logs panel
+            # may not capture print() from inside button click handlers.
+            debug_log_path = os.path.join(workspace_dir, "debug.log")
+            def dbg(msg):
+                with open(debug_log_path, "a") as f:
+                    f.write(msg + "\n")
+
+            dbg(f"=== NEW RUN ===")
+            dbg(f"cwd={os.getcwd()}")
+            dbg(f"workspace_dir={workspace_dir}")
+            dbg(f"audio_dir={audio_dir}, exists={os.path.exists(audio_dir)}")
+            dbg(f"img_dir={img_dir}, exists={os.path.exists(img_dir)}")
 
             try:
                 # Phase 1: PowerPoint Text Parsing Extraction
@@ -252,21 +260,24 @@ if uploaded_file is not None:
                 status_container.info("⚙️ Step 4/5: Synthesizing premium neural text-to-speech audio layers...")
                 progress_bar.progress(75)
 
-                print(f"[DEBUG] cwd={os.getcwd()}")
-                print(f"[DEBUG] audio_dir={audio_dir}")
-                print(f"[DEBUG] img_dir={img_dir}")
-                print(f"[DEBUG] audio_dir exists={os.path.exists(audio_dir)}")
-                print(f"[DEBUG] img_dir exists={os.path.exists(img_dir)}")
-                print(f"[DEBUG] slide_scripts count={len(slide_scripts)}")
+                dbg(f"slide_scripts count={len(slide_scripts)}")
+                dbg(f"total_slides={total_slides}")
 
+                # Phase 4: Edge Premium Neural Audio Audio Processing Track
+                status_container.info("⚙️ Step 4/5: Synthesizing premium neural text-to-speech audio layers...")
+                progress_bar.progress(75)
+
+                dbg(f"Starting audio generation...")
                 audio_generator.generate_all_slide_audio(
                     slide_scripts=slide_scripts,
                     audio_dir=audio_dir,
                     voice_profile=selected_voice,
                 )
 
-                print(f"[DEBUG] audio files after generation: {sorted(os.listdir(audio_dir)) if os.path.exists(audio_dir) else 'DIR MISSING'}")
-                print(f"[DEBUG] image files: {sorted(os.listdir(img_dir)) if os.path.exists(img_dir) else 'DIR MISSING'}")
+                audio_files_after = sorted(os.listdir(audio_dir)) if os.path.exists(audio_dir) else "DIR MISSING"
+                img_files_after = sorted(os.listdir(img_dir)) if os.path.exists(img_dir) else "DIR MISSING"
+                dbg(f"audio files after generation: {audio_files_after}")
+                dbg(f"image files: {img_files_after}")
 
                 # Phase 5: Final Video Compilation Layout Assembly
                 status_container.info("⚙️ Step 5/5: Compiling timeline arrays and formatting final lecture video...")
@@ -308,7 +319,18 @@ if uploaded_file is not None:
 
             except Exception as e:
                 import traceback
-                print(f"[DEBUG-ERROR] Full traceback:\n{traceback.format_exc()}")
+                tb = traceback.format_exc()
+                try:
+                    dbg(f"EXCEPTION: {tb}")
+                except Exception:
+                    pass
                 progress_bar.empty()
                 status_container.error(f"❌ Processing engine thread aborted: {str(e)}")
                 st.session_state.is_processing = False
+
+            # Always show the debug log contents if it exists, so we can
+            # see what actually happened regardless of Streamlit log filtering
+            if os.path.exists(debug_log_path):
+                with st.expander("🔍 Debug Log (for troubleshooting)", expanded=True):
+                    with open(debug_log_path, "r") as f:
+                        st.code(f.read())
