@@ -195,6 +195,11 @@ if uploaded_file is not None:
                 shutil.rmtree(stale_dir, ignore_errors=True)
                 os.makedirs(stale_dir, exist_ok=True)
 
+            print(f"[DEBUG-INIT] cwd={os.getcwd()}")
+            print(f"[DEBUG-INIT] workspace_dir={workspace_dir}")
+            print(f"[DEBUG-INIT] audio_dir={audio_dir}, exists={os.path.exists(audio_dir)}")
+            print(f"[DEBUG-INIT] img_dir={img_dir}, exists={os.path.exists(img_dir)}")
+
             try:
                 # Phase 1: PowerPoint Text Parsing Extraction
                 status_container.info("⚙️ Step 1/5: Extracting presentation text outline layers...")
@@ -302,6 +307,8 @@ if uploaded_file is not None:
                     st.text_area("Live Generated Speech Output:", value=ai_script, height=420)
 
             except Exception as e:
+                import traceback
+                print(f"[DEBUG-ERROR] Full traceback:\n{traceback.format_exc()}")
                 progress_bar.empty()
                 status_container.error(f"❌ Processing engine thread aborted: {str(e)}")
                 st.session_state.is_processing = False
