@@ -246,11 +246,22 @@ if uploaded_file is not None:
                 # Phase 4: Edge Premium Neural Audio Audio Processing Track
                 status_container.info("⚙️ Step 4/5: Synthesizing premium neural text-to-speech audio layers...")
                 progress_bar.progress(75)
+
+                print(f"[DEBUG] cwd={os.getcwd()}")
+                print(f"[DEBUG] audio_dir={audio_dir}")
+                print(f"[DEBUG] img_dir={img_dir}")
+                print(f"[DEBUG] audio_dir exists={os.path.exists(audio_dir)}")
+                print(f"[DEBUG] img_dir exists={os.path.exists(img_dir)}")
+                print(f"[DEBUG] slide_scripts count={len(slide_scripts)}")
+
                 audio_generator.generate_all_slide_audio(
                     slide_scripts=slide_scripts,
                     audio_dir=audio_dir,
                     voice_profile=selected_voice,
                 )
+
+                print(f"[DEBUG] audio files after generation: {sorted(os.listdir(audio_dir)) if os.path.exists(audio_dir) else 'DIR MISSING'}")
+                print(f"[DEBUG] image files: {sorted(os.listdir(img_dir)) if os.path.exists(img_dir) else 'DIR MISSING'}")
 
                 # Phase 5: Final Video Compilation Layout Assembly
                 status_container.info("⚙️ Step 5/5: Compiling timeline arrays and formatting final lecture video...")
