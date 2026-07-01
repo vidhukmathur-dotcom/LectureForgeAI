@@ -65,6 +65,62 @@ voice_map = {
 selected_voice_label = st.sidebar.selectbox("Premium Voice Accent Profile:", list(voice_map.keys()))
 selected_voice = voice_map[selected_voice_label]
 
+# INSTITUTIONAL BRANDING FOOTER
+st.sidebar.markdown("---")
+st.sidebar.markdown(
+    """
+    <div style="
+        background: linear-gradient(135deg, #1a2f5e 0%, #1e3a6e 100%);
+        border-left: 4px solid #f0a500;
+        border-radius: 8px;
+        padding: 14px 16px;
+        margin-top: 8px;
+    ">
+        <div style="
+            color: #f0a500;
+            font-size: 11px;
+            font-weight: 700;
+            letter-spacing: 1.2px;
+            text-transform: uppercase;
+            margin-bottom: 8px;
+        ">Developed by</div>
+        <div style="
+            color: #ffffff;
+            font-size: 14px;
+            font-weight: 600;
+            line-height: 1.4;
+            margin-bottom: 4px;
+        ">Vidhu K. Mathur</div>
+        <div style="
+            color: #c8d8f0;
+            font-size: 11px;
+            line-height: 1.5;
+            margin-bottom: 10px;
+        ">
+            <span style="color: #f0a500; font-weight: 600;">IBS</span> — The ICFAI University, Jaipur
+        </div>
+        <div style="
+            border-top: 1px solid rgba(240,165,0,0.3);
+            padding-top: 8px;
+            margin-top: 4px;
+        ">
+            <a href="mailto:vidhuk.mathur@iujaipur.edu.in" style="
+                color: #a8c4e8;
+                font-size: 11px;
+                text-decoration: none;
+            ">📧 vidhuk.mathur@iujaipur.edu.in</a>
+        </div>
+        <div style="
+            color: rgba(200,216,240,0.5);
+            font-size: 10px;
+            margin-top: 8px;
+            text-align: right;
+        ">LectureForge AI v1.0</div>
+    </div>
+    """,
+    unsafe_allow_html=True,
+)
+
 # 2. FILE UPLOADER PORTAL
 uploaded_file = st.file_uploader("📂 Drop your lecture presentation here (.pdf)", type=["pdf"])
 st.caption(
