@@ -195,113 +195,54 @@ if uploaded_file is not None:
                 shutil.rmtree(stale_dir, ignore_errors=True)
                 os.makedirs(stale_dir, exist_ok=True)
 
-            # Write debug info to a file since Streamlit Cloud's logs panel
-            # may not capture print() from inside button click handlers.
-            debug_log_path = os.path.join(workspace_dir, "debug.log")
-            def dbg(msg):
-                with open(debug_log_path, "a") as f:
-                    f.write(msg + "\n")
-
-            dbg(f"=== NEW RUN ===")
-            dbg(f"cwd={os.getcwd()}")
-            dbg(f"workspace_dir={workspace_dir}")
-            dbg(f"audio_dir={audio_dir}, exists={os.path.exists(audio_dir)}")
-            dbg(f"img_dir={img_dir}, exists={os.path.exists(img_dir)}")
-
             try:
-                # Phase 1: PowerPoint Text Parsing Extraction
+                # Phase 1: Text extraction
                 status_container.info("⚙️ Step 1/5: Extracting presentation text outline layers...")
                 progress_bar.progress(10)
                 extracted_text = ppt_processor.extract_text(temp_ppt_path)
 
-                # Phase 2: Frame Canvas Image Export Pass
+                # Phase 2: Slide image rendering
                 status_container.info("⚙️ Step 2/5: Rendering visual slide frames into high-res sheets...")
                 progress_bar.progress(30)
                 total_slides = ppt_processor.export_slide_images(temp_ppt_path, img_dir)
 
-                # Phase 3: Llama 3.3 Prompting via Groq Ecosystem
-                status_container.info("⚙️ Step 3/5: Consulting Groq Llama 3.3 to structure balanced lecture narration script...")
+                # Phase 3: AI narration generation
+                # Uses openai/gpt-oss-120b for text slides (full deck context
+                # preserved in one call), and meta-llama/llama-4-scout for
+                # image-only slides that have no extractable text.
+                status_container.info("⚙️ Step 3/5: Generating lecture narration script via Groq AI...")
                 progress_bar.progress(50)
 
-                # Generate narration for the WHOLE deck in one call (so the
-                # model retains full context across slides for natural
-                # narrative flow), but request strict JSON array output
-                # instead of free-form text with hand-typed markers. Slide
-                # identity is the array index -- there's no marker-parsing
-                # step left that could misalign slides, even on long decks.
-                slide_scripts = ai_engine.generate_lecture_narration(extracted_text, total_slides)
+                slide_scripts = ai_engine.generate_lecture_narration(
+                    extracted_text,
+                    total_slides,
+                    image_dir=img_dir,
+                )
 
-                # Guard against empty narration text reaching the TTS step.
-                # Image-only slides (no extractable text -- a photo, chart,
-                # or diagram with no text layer) sometimes cause the AI to
-                # return an empty string for that slide's entry, since there
-                # was no source text to work from. Feeding an empty string
-                # to edge-tts is a likely source of TTS failures, which then
-                # surface downstream as "missing audio for slide N" -- so
-                # this is caught and replaced here, before that can happen.
+                # Final safety net: replace any empty narration strings before
+                # they reach edge-tts (empty text to TTS causes audio failures).
                 for idx in range(len(slide_scripts)):
                     if not slide_scripts[idx] or not slide_scripts[idx].strip():
                         slide_scripts[idx] = (
-                            f"This slide presents a visual element without accompanying text. "
-                            f"Let's take a moment to look at it before moving forward."
+                            "This slide presents a visual element. "
+                            "Let's take a moment to look at it before moving forward."
                         )
 
-                # Build a human-readable combined script (with slide headers)
-                # for the Word backup document and the on-screen script preview.
+                # Build human-readable combined script for Word backup and UI preview
                 ai_script = "\n\n".join(
                     f"--- Slide {idx} ---\n{text}"
                     for idx, text in enumerate(slide_scripts, start=1)
                 )
-
-                # Save out raw narration text outline over to Microsoft Word framework files
                 doc_generator.save_narration_to_word(ai_script, temp_ppt_path)
 
-                # Phase 4: Edge Premium Neural Audio Audio Processing Track
+                # Phase 4: TTS audio generation
                 status_container.info("⚙️ Step 4/5: Synthesizing premium neural text-to-speech audio layers...")
                 progress_bar.progress(75)
-
-                dbg(f"slide_scripts count={len(slide_scripts)}")
-                dbg(f"total_slides={total_slides}")
-
-                # Phase 4: Edge Premium Neural Audio Audio Processing Track
-                status_container.info("⚙️ Step 4/5: Synthesizing premium neural text-to-speech audio layers...")
-                progress_bar.progress(75)
-
-                dbg(f"Starting audio generation...")
                 audio_generator.generate_all_slide_audio(
                     slide_scripts=slide_scripts,
                     audio_dir=audio_dir,
                     voice_profile=selected_voice,
                 )
-
-                audio_files_after = sorted(os.listdir(audio_dir)) if os.path.exists(audio_dir) else "DIR MISSING"
-                img_files_after = sorted(os.listdir(img_dir)) if os.path.exists(img_dir) else "DIR MISSING"
-                dbg(f"audio files after generation: {audio_files_after}")
-                dbg(f"image files: {img_files_after}")
-
-                # Write what video_generator will actually see into the debug log
-                import re as _re
-                def _test_extract(path):
-                    nums = _re.findall(r'\d+', os.path.basename(path))
-                    return int(nums[-1]) if nums else None
-
-                test_audio = {
-                    _test_extract(os.path.join(audio_dir, f)): f
-                    for f in os.listdir(audio_dir)
-                    if f.lower().endswith(('.mp3', '.wav', '.aac'))
-                }
-                test_images = {
-                    _test_extract(os.path.join(img_dir, f)): f
-                    for f in os.listdir(img_dir)
-                    if f.lower().endswith(('.png', '.jpg', '.jpeg'))
-                }
-                dbg(f"audio_by_number keys: {sorted(test_audio.keys())}")
-                dbg(f"images_by_number keys: {sorted(test_images.keys())}")
-                dbg(f"expected_numbers: {list(range(1, total_slides + 1))}")
-                missing_a = [n for n in range(1, total_slides + 1) if n not in test_audio]
-                missing_i = [n for n in range(1, total_slides + 1) if n not in test_images]
-                dbg(f"missing audio keys: {missing_a}")
-                dbg(f"missing image keys: {missing_i}")
 
                 # Phase 5: Final Video Compilation Layout Assembly
                 status_container.info("⚙️ Step 5/5: Compiling timeline arrays and formatting final lecture video...")
@@ -342,19 +283,6 @@ if uploaded_file is not None:
                     st.text_area("Live Generated Speech Output:", value=ai_script, height=420)
 
             except Exception as e:
-                import traceback
-                tb = traceback.format_exc()
-                try:
-                    dbg(f"EXCEPTION: {tb}")
-                except Exception:
-                    pass
                 progress_bar.empty()
                 status_container.error(f"❌ Processing engine thread aborted: {str(e)}")
                 st.session_state.is_processing = False
-
-            # Always show the debug log contents if it exists, so we can
-            # see what actually happened regardless of Streamlit log filtering
-            if os.path.exists(debug_log_path):
-                with st.expander("🔍 Debug Log (for troubleshooting)", expanded=True):
-                    with open(debug_log_path, "r") as f:
-                        st.code(f.read())
